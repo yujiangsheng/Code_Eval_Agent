@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Eval Agent — 代码评估与进化智能体</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- vis-network for graph visualization -->
+  <script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+  <!-- Chart.js for statistics -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <!-- marked.js for Markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <!-- 侧边栏导航 -->
+  <nav id="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-icon">⚡</span>
+      <span class="brand-text">Eval Agent</span>
+    </div>
+    <ul class="nav-list">
+      <li class="nav-item active" data-tab="console">
+        <span class="nav-icon">🏠</span><span class="nav-label">控制台</span>
+      </li>
+      <li class="nav-item" data-tab="codegraph">
+        <span class="nav-icon">🔗</span><span class="nav-label">Code Graph</span>
+      </li>
+      <li class="nav-item" data-tab="stats">
+        <span class="nav-icon">📊</span><span class="nav-label">统计分析</span>
+      </li>
+      <li class="nav-item" data-tab="evaluation">
+        <span class="nav-icon">📝</span><span class="nav-label">深度评估</span>
+      </li>
+      <li class="nav-item" data-tab="knowledge">
+        <span class="nav-icon">🧠</span><span class="nav-label">知识图谱</span>
+      </li>
+      <li class="nav-item" data-tab="memory">
+        <span class="nav-icon">📚</span><span class="nav-label">记忆库</span>
+      </li>
+    </ul>
+    <div class="sidebar-footer">
+      <span class="version">v0.1.0</span>
+    </div>
+  </nav>
+
+  <!-- 主内容区 -->
+  <main id="content">
+
+    <!-- ═══ Tab: 控制台 ═══ -->
+    <section id="tab-console" class="tab-panel active">
+      <h1>控制台</h1>
+      <div class="console-input-area">
+        <div class="input-group">
+          <label for="dir-input">项目目录路径</label>
+          <div class="input-row">
+            <input type="text" id="dir-input" placeholder="/path/to/your/project" spellcheck="false">
+            <button class="btn btn-sm" onclick="App.openBrowser()" title="浏览本地目录">
+              <span class="btn-icon">📂</span> 浏览
+            </button>
+            <button id="btn-scan" class="btn btn-primary" onclick="App.scan()">
+              <span class="btn-icon">🔍</span> 扫描分析
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- 扫描状态 -->
+      <div id="scan-status" class="status-bar hidden"></div>
+
+      <!-- 概览卡片 -->
+      <div id="overview-cards" class="cards-grid hidden">
+        <div class="metric-card">
+          <div class="metric-value" id="m-files">-</div>
+          <div class="metric-label">文件数</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-lines">-</div>
+          <div class="metric-label">代码行</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-functions">-</div>
+          <div class="metric-label">函数</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-classes">-</div>
+          <div class="metric-label">类</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-imports">-</div>
+          <div class="metric-label">导入</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value" id="m-comments">-</div>
+          <div class="metric-label">注释率</div>
+        </div>
+      </div>
+
+      <!-- 文件列表 -->
+      <div id="file-list-section" class="section-card hidden">
+        <h2>文件列表</h2>
+        <table class="data-table" id="file-table">
+          <thead>
+            <tr>
+              <th>文件路径</th>
+              <th>行数</th>
+              <th>代码行</th>
+              <th>函数</th>
+              <th>类</th>
+              <th>最大复杂度</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <!-- 问题提示 -->
+      <div id="issues-section" class="section-card hidden">
+        <h2>发现的问题</h2>
+        <div id="issues-content"></div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: Code Graph ═══ -->
+    <section id="tab-codegraph" class="tab-panel">
+      <h1>Code Graph</h1>
+      <div id="codegraph-placeholder" class="placeholder-msg">
+        请先在控制台扫描一个项目目录
+      </div>
+      <div id="codegraph-controls" class="graph-controls hidden">
+        <label><input type="checkbox" id="cg-show-files" checked> 文件</label>
+        <label><input type="checkbox" id="cg-show-classes" checked> 类</label>
+        <label><input type="checkbox" id="cg-show-functions" checked> 函数</label>
+        <label><input type="checkbox" id="cg-show-methods"> 方法</label>
+        <button class="btn btn-sm" onclick="App.fitCodeGraph()">适应窗口</button>
+      </div>
+      <div id="codegraph-container" class="graph-container hidden"></div>
+      <div id="codegraph-legend" class="graph-legend hidden">
+        <span class="legend-item"><span class="legend-dot" style="background:#3b82f6"></span>文件</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#a855f7"></span>类</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#22c55e"></span>函数</span>
+        <span class="legend-item"><span class="legend-dot" style="background:#06b6d4"></span>方法</span>
+        <span class="legend-item"><span class="legend-line" style="border-color:#64748b;border-style:dashed"></span>导入</span>
+        <span class="legend-item"><span class="legend-line" style="border-color:#f59e0b"></span>调用</span>
+        <span class="legend-item"><span class="legend-line" style="border-color:#a855f7;border-width:2px"></span>继承</span>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: 统计分析 ═══ -->
+    <section id="tab-stats" class="tab-panel">
+      <h1>统计分析</h1>
+      <div id="stats-placeholder" class="placeholder-msg">
+        请先在控制台扫描一个项目目录
+      </div>
+      <div id="stats-content" class="hidden">
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>代码行分布</h3>
+            <canvas id="chart-lines"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>文件规模分布</h3>
+            <canvas id="chart-file-sizes"></canvas>
+          </div>
+        </div>
+        <div class="charts-row">
+          <div class="chart-card">
+            <h3>复杂度分布</h3>
+            <canvas id="chart-complexity"></canvas>
+          </div>
+          <div class="chart-card">
+            <h3>代码 vs 注释</h3>
+            <canvas id="chart-code-comments"></canvas>
+          </div>
+        </div>
+        <!-- 复杂度排行 -->
+        <div class="section-card">
+          <h2>复杂度排行 Top-20</h2>
+          <table class="data-table" id="complexity-table">
+            <thead>
+              <tr><th>#</th><th>函数</th><th>文件</th><th>行号</th><th>圈复杂度</th></tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: 深度评估 ═══ -->
+    <section id="tab-evaluation" class="tab-panel">
+      <h1>深度评估</h1>
+      <div class="eval-config">
+        <div class="input-group">
+          <label for="eval-requirements">自定义要求 / 划重点</label>
+          <textarea id="eval-requirements" rows="3"
+            placeholder="例如：重点关注安全问题、检查所有API端点的输入验证、关注数据库操作的性能..."></textarea>
+        </div>
+        <div class="input-group">
+          <label>关注维度</label>
+          <div class="focus-chips">
+            <label class="chip"><input type="checkbox" value="安全性" class="eval-focus"> 🔒 安全性</label>
+            <label class="chip"><input type="checkbox" value="性能" class="eval-focus"> ⚡ 性能</label>
+            <label class="chip"><input type="checkbox" value="可读性" class="eval-focus"> 📖 可读性</label>
+            <label class="chip"><input type="checkbox" value="架构设计" class="eval-focus"> 🏗️ 架构</label>
+            <label class="chip"><input type="checkbox" value="代码规范" class="eval-focus"> ✅ 规范</label>
+            <label class="chip"><input type="checkbox" value="边界条件" class="eval-focus"> 🔲 边界</label>
+            <label class="chip"><input type="checkbox" value="可维护性" class="eval-focus"> 🔧 可维护性</label>
+          </div>
+        </div>
+        <div class="input-row">
+          <label class="chip"><input type="checkbox" id="eval-self-check"> 📋 启用自我校验</label>
+          <button id="btn-evaluate" class="btn btn-accent" onclick="App.evaluate()">
+            <span class="btn-icon">🚀</span> 开始深度评估
+          </button>
+        </div>
+      </div>
+
+      <!-- 进度区域 -->
+      <div id="eval-progress" class="progress-area hidden">
+        <div class="progress-header">
+          <span class="spinner"></span>
+          <span id="eval-progress-text">正在评估...</span>
+        </div>
+        <div id="eval-log" class="log-output"></div>
+      </div>
+
+      <!-- 报告区域 -->
+      <div id="eval-report" class="report-area hidden">
+        <div class="report-toolbar">
+          <button class="btn btn-sm" onclick="App.copyReport()">📋 复制报告</button>
+          <button class="btn btn-sm" onclick="App.downloadReport()">💾 下载 .md</button>
+        </div>
+        <div id="eval-report-content" class="markdown-body"></div>
+      </div>
+    </section>
+
+    <!-- ═══ Tab: 知识图谱 ═══ -->
+    <section id="tab-knowledge" class="tab-panel">
+      <h1>知识图谱</h1>
+      <div id="knowledge-graph-container" class="graph-container"></div>
+      <div id="knowledge-categories" class="section-card"></div>
+    </section>
+
+    <!-- ═══ Tab: 记忆库 ═══ -->
+    <section id="tab-memory" class="tab-panel">
+      <h1>长期记忆库</h1>
+      <div id="memory-stats" class="status-bar"></div>
+      <div id="memory-entries" class="section-card"></div>
+    </section>
+
+  </main>
+
+  <!-- 目录浏览器弹窗 -->
+  <div id="dir-browser-overlay" class="modal-overlay hidden" onclick="App.closeBrowser(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2>选择项目目录</h2>
+        <button class="modal-close" onclick="App.closeBrowser()">&times;</button>
+      </div>
+      <div class="modal-breadcrumb" id="browser-breadcrumb"></div>
+      <div class="modal-body" id="browser-list"></div>
+      <div class="modal-footer">
+        <span id="browser-current-path" class="browser-path"></span>
+        <div class="modal-actions">
+          <button class="btn btn-sm" onclick="App.closeBrowser()">取消</button>
+          <button class="btn btn-primary" onclick="App.selectDir()">选择此目录</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
