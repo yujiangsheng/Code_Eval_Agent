@@ -34,7 +34,14 @@ DEFAULT_IGNORE_DIRS = {
 }
 
 # 默认支持的文件后缀
-DEFAULT_EXTENSIONS = {".py"}
+DEFAULT_EXTENSIONS = {
+    ".py", ".js", ".ts", ".jsx", ".tsx",
+    ".java", ".c", ".cpp", ".h", ".hpp",
+    ".go", ".rs", ".rb", ".php",
+    ".cs", ".swift", ".kt", ".kts",
+    ".scala", ".lua", ".sh", ".bash",
+    ".r", ".R", ".m",
+}
 
 
 @dataclass
@@ -105,19 +112,19 @@ class ProjectAnalysis:
 
 
 class DirectoryScanner:
-    """目录扫描器 — 递归读取目录中所有 Python 文件并构建项目级分析
+    """目录扫描器 — 递归读取目录中所有代码文件并构建项目级分析
 
     扫描流程::
 
         scan(root_dir)
-          ├─ 1. _discover_files()           递归发现 .py 文件
-          ├─ 2. _analyze_file() × N         逐文件 AST 分析
+          ├─ 1. _discover_files()           递归发现代码文件
+          ├─ 2. _analyze_file() × N         逐文件静态分析
           ├─ 3. _aggregate_metrics()         汇总行数/函数/类等指标
           ├─ 4. _analyze_cross_file()        跨文件依赖/重名/循环/复杂度
           └─ 5. _build_project_graph()       生成项目级 Code Graph 文本
 
     Attributes:
-        extensions:    识别的文件后缀集合，默认 {'.py'}
+        extensions:    识别的文件后缀集合，支持多种编程语言
         ignore_dirs:   跳过的目录名集合（__pycache__ 等）
         max_file_size: 跳过的单文件字节上限，默认 1 MB
         analyzer:      CodeAnalyzer 实例
@@ -135,7 +142,7 @@ class DirectoryScanner:
         self.analyzer = CodeAnalyzer()
 
     def scan(self, root_dir: str) -> ProjectAnalysis:
-        """扫描目录，对所有 Python 文件进行分析
+        """扫描目录，对所有代码文件进行分析
 
         Args:
             root_dir: 项目根目录路径
@@ -149,12 +156,12 @@ class DirectoryScanner:
 
         project = ProjectAnalysis(root_dir=root_dir)
 
-        # 1. 递归发现所有文件
-        py_files = self._discover_files(root_dir)
-        logger.info("发现 %d 个 Python 文件", len(py_files))
+        # 1. 递归发现所有代码文件
+        code_files = self._discover_files(root_dir)
+        logger.info("发现 %d 个代码文件", len(code_files))
 
         # 2. 逐文件分析
-        for filepath in sorted(py_files):
+        for filepath in sorted(code_files):
             fa = self._analyze_file(filepath, root_dir)
             if fa:
                 project.files.append(fa)
@@ -255,13 +262,25 @@ class DirectoryScanner:
         local_modules = set()
         for fa in project.files:
             # 将文件路径转为模块名: a/b/c.py -> a.b.c
-            mod = fa.relative_path.replace(os.sep, ".").removesuffix(".py")
+            # 将文件路径转为模块名（适用于各语言）
+            base = fa.relative_path.replace(os.sep, ".")
+            # 去除常见扩展名
+            for ext in sorted(self.extensions, key=len, reverse=True):
+                if base.endswith(ext):
+                    base = base[:-len(ext)]
+                    break
+            mod = base
             if mod.endswith(".__init__"):
                 mod = mod.removesuffix(".__init__")
             local_modules.add(mod)
 
         for fa in project.files:
-            mod_name = fa.relative_path.replace(os.sep, ".").removesuffix(".py")
+            base = fa.relative_path.replace(os.sep, ".")
+            for ext in sorted(self.extensions, key=len, reverse=True):
+                if base.endswith(ext):
+                    base = base[:-len(ext)]
+                    break
+            mod_name = base
             if mod_name.endswith(".__init__"):
                 mod_name = mod_name.removesuffix(".__init__")
             deps = []

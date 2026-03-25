@@ -19,7 +19,7 @@ from eval_agent.analyzer import AnalysisResult
 logger = logging.getLogger(__name__)
 
 VALIDATOR_SYSTEM_PROMPT = """\
-你是一个测试专家。请为给定代码生成全面的测试用例。
+你是一个测试专家，擅长多种编程语言的测试框架。请为给定代码生成全面的测试用例。
 
 测试要求：
 1. **正常路径测试**：常规输入的正确输出
@@ -27,7 +27,7 @@ VALIDATOR_SYSTEM_PROMPT = """\
 3. **异常路径测试**：错误输入、异常触发
 4. **性能测试**（如适用）：大数据量场景
 
-测试框架：使用 pytest
+测试框架：请根据代码语言选择合适的测试框架
 
 请严格按以下 JSON 格式输出：
 ```json
@@ -55,7 +55,7 @@ class Validator:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def generate_tests(self, source: str, analysis: AnalysisResult) -> dict:
+    def generate_tests(self, source: str, analysis: AnalysisResult, lang_name: str = "Python", lang_id: str = "python", test_framework: str = "pytest") -> dict:
         """为代码生成测试用例
 
         Args:
@@ -65,12 +65,12 @@ class Validator:
         Returns:
             测试用例字典
         """
-        user_prompt = self._build_prompt(source, analysis)
+        user_prompt = self._build_prompt(source, analysis, lang_name, lang_id, test_framework)
         return self.llm.chat_json(VALIDATOR_SYSTEM_PROMPT, user_prompt)
 
-    def _build_prompt(self, source: str, analysis: AnalysisResult) -> str:
-        parts = ["请为以下代码生成测试用例：\n"]
-        parts.append(f"```python\n{source}\n```\n")
+    def _build_prompt(self, source: str, analysis: AnalysisResult, lang_name: str = "Python", lang_id: str = "python", test_framework: str = "pytest") -> str:
+        parts = [f"请为以下 {lang_name} 代码生成测试用例（使用 {test_framework} 测试框架）：\n"]
+        parts.append(f"```{lang_id}\n{source}\n```\n")
 
         # 提供函数签名信息
         if analysis.functions:

@@ -51,7 +51,7 @@ class Fixer:
     def __init__(self, llm: LLMClient):
         self.llm = llm
 
-    def fix(self, source: str, issues: list[dict], code_graph: str = "") -> dict:
+    def fix(self, source: str, issues: list[dict], code_graph: str = "", lang_name: str = "Python", lang_id: str = "python") -> dict:
         """根据问题列表修复代码
 
         Args:
@@ -62,12 +62,12 @@ class Fixer:
         Returns:
             修复结果字典
         """
-        user_prompt = self._build_prompt(source, issues, code_graph)
+        user_prompt = self._build_prompt(source, issues, code_graph, lang_name, lang_id)
         return self.llm.chat_json(FIXER_SYSTEM_PROMPT, user_prompt)
 
-    def _build_prompt(self, source: str, issues: list[dict], code_graph: str) -> str:
-        parts = ["请修复以下代码中发现的问题：\n"]
-        parts.append(f"```python\n{source}\n```\n")
+    def _build_prompt(self, source: str, issues: list[dict], code_graph: str, lang_name: str = "Python", lang_id: str = "python") -> str:
+        parts = [f"请修复以下 {lang_name} 代码中发现的问题：\n"]
+        parts.append(f"```{lang_id}\n{source}\n```\n")
 
         if issues:
             parts.append("发现的问题：")

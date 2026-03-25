@@ -97,6 +97,30 @@ body {
   padding: 12px 18px;
   border-top: 1px solid var(--border);
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+.btn-quit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 13px;
+  transition: background var(--transition), color var(--transition), border-color var(--transition);
+}
+.btn-quit:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--red);
+  border-color: var(--red);
 }
 .version { font-size: 11px; color: var(--text-dim); }
 
@@ -504,35 +528,143 @@ textarea {
 }
 
 /* ══════════════ Memory ══════════════ */
-#memory-entries .mem-entry {
+.memory-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 10px;
+}
+.mem-tab {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all .15s;
+}
+.mem-tab:hover { background: var(--bg-primary); color: var(--text-primary); }
+.mem-tab.active {
+  background: var(--blue);
+  color: #fff;
+  border-color: var(--blue);
+}
+.mem-panel { display: none; }
+.mem-panel.active { display: block; }
+.mem-panel-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  margin: 0 0 12px 0;
+}
+
+/* 工作记忆 */
+.wm-item {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.wm-item:last-child { border-bottom: none; }
+.wm-label { color: var(--text-secondary); }
+.wm-value { color: var(--cyan); font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+/* 长期记忆条目 */
+.mem-entry {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px;
   margin-bottom: 10px;
 }
-#memory-entries .mem-file {
+.mem-entry .mem-file {
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 12px;
   color: var(--cyan);
   margin-bottom: 4px;
 }
-#memory-entries .mem-score {
+.mem-entry .mem-score {
   font-size: 11px;
   color: var(--green);
   float: right;
 }
-#memory-entries .mem-content {
+.mem-entry .mem-content {
   font-size: 13px;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-all;
 }
-#memory-entries .mem-meta {
+.mem-entry .mem-meta {
   font-size: 11px;
   color: var(--text-dim);
   margin-top: 6px;
 }
+
+/* 持久记忆类别 */
+.pk-category {
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+.pk-category-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--purple);
+  margin-bottom: 8px;
+}
+.pk-item {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 3px 0 3px 12px;
+  border-left: 2px solid var(--border);
+  margin-bottom: 4px;
+}
+
+/* 外部记忆 */
+.external-input-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.external-input-row input {
+  flex: 1;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.external-input-row input:focus {
+  outline: none;
+  border-color: var(--blue);
+}
+.ext-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 6px;
+}
+.ext-entry-content { font-size: 13px; color: var(--text-secondary); flex: 1; }
+.ext-entry-time { font-size: 11px; color: var(--text-dim); margin: 0 12px; white-space: nowrap; }
+.ext-entry-del {
+  background: transparent;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.ext-entry-del:hover { background: rgba(239,68,68,.15); color: var(--red); }
 
 /* ══════════════ Modal / 目录浏览器 ══════════════ */
 .modal-overlay {

@@ -23,7 +23,7 @@ IMPROVER_SYSTEM_PROMPT = """\
 
 改进要求：
 - 保持功能不变
-- 遵循 Python 最佳实践
+- 遵循该语言的最佳实践
 - 每个改进点必须有清晰的说明
 
 请严格按以下 JSON 格式输出：
@@ -59,6 +59,8 @@ class Improver:
         evaluation: dict,
         code_graph: str = "",
         relevant_knowledge: str = "",
+        lang_name: str = "Python",
+        lang_id: str = "python",
     ) -> dict:
         """对代码进行改进
 
@@ -71,14 +73,15 @@ class Improver:
         Returns:
             改进结果字典
         """
-        user_prompt = self._build_prompt(source, evaluation, code_graph, relevant_knowledge)
+        user_prompt = self._build_prompt(source, evaluation, code_graph, relevant_knowledge, lang_name, lang_id)
         return self.llm.chat_json(IMPROVER_SYSTEM_PROMPT, user_prompt)
 
     def _build_prompt(
-        self, source: str, evaluation: dict, code_graph: str, knowledge: str
+        self, source: str, evaluation: dict, code_graph: str, knowledge: str,
+        lang_name: str = "Python", lang_id: str = "python",
     ) -> str:
-        parts = ["请改进以下代码：\n"]
-        parts.append(f"```python\n{source}\n```\n")
+        parts = [f"请改进以下 {lang_name} 代码：\n"]
+        parts.append(f"```{lang_id}\n{source}\n```\n")
 
         # 附加评估维度信息
         dims = evaluation.get("dimensions", {})

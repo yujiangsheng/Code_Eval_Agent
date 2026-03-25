@@ -18,7 +18,7 @@ from eval_agent.analyzer import AnalysisResult
 logger = logging.getLogger(__name__)
 
 EVALUATION_SYSTEM_PROMPT = """\
-你是一个专业的代码评估专家。请对给定代码进行全面的多维度评估。
+你是一个专业的代码评估专家，擅长多种编程语言。请对给定代码进行全面的多维度评估。
 
 评估维度：
 1. **语法正确性**：代码是否存在语法错误
@@ -26,7 +26,7 @@ EVALUATION_SYSTEM_PROMPT = """\
 3. **边界条件**：是否覆盖了常见的边界情况（空输入、极端值、异常数据等）
 4. **时间/空间复杂度**：算法复杂度分析和优化空间
 5. **安全性**：是否存在注入、信息泄露等安全漏洞
-6. **代码规范**：是否遵循 PEP 8 等编码规范
+6. **代码规范**：是否遵循该语言的主流编码规范
 7. **可维护性**：代码结构是否清晰，是否易于扩展
 
 请严格按以下 JSON 格式输出：
@@ -77,7 +77,9 @@ class Evaluator:
         Returns:
             评估结果字典
         """
-        user_prompt = self._build_prompt(source, analysis)
+        lang_name = getattr(analysis, 'language', 'Python')
+        lang_id = getattr(analysis, 'lang_id', 'python')
+        user_prompt = self._build_prompt(source, analysis, lang_name, lang_id)
         result = self.llm.chat_json(EVALUATION_SYSTEM_PROMPT, user_prompt)
 
         # 确保 issues 列表按严重性排序
@@ -89,10 +91,10 @@ class Evaluator:
 
         return result
 
-    def _build_prompt(self, source: str, analysis: AnalysisResult) -> str:
+    def _build_prompt(self, source: str, analysis: AnalysisResult, lang_name: str = "Python", lang_id: str = "python") -> str:
         """构建评估提示，将源码和静态分析指标整合到用户 prompt 中"""
-        parts = ["请评估以下 Python 代码：\n"]
-        parts.append(f"```python\n{source}\n```\n")
+        parts = [f"请评估以下 {lang_name} 代码：\n"]
+        parts.append(f"```{lang_id}\n{source}\n```\n")
 
         # 附加静态分析信息
         info = analysis.to_dict()

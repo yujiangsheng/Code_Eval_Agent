@@ -21,7 +21,7 @@ from typing import Optional
 
 from config import AgentConfig
 from eval_agent.llm_client import LLMClient
-from eval_agent.analyzer import CodeAnalyzer
+from eval_agent.analyzer import CodeAnalyzer, detect_language
 from eval_agent.evaluator import Evaluator
 from eval_agent.fixer import Fixer
 from eval_agent.improver import Improver
@@ -126,6 +126,9 @@ class EvalAgent:
         self.working_memory.file_path = file_path
         logger.info("开始评估%s", f" [{file_path}]" if file_path else "")
 
+        # 语言检测
+        lang_name, lang_id, _, style_guide, test_framework = detect_language(file_path or "<input>.py")
+
         # —— 步骤 1 & 2：解析代码 + 构建 Code Graph ——
         self._step_analyze(source, file_path)
 
@@ -133,11 +136,11 @@ class EvalAgent:
         self._step_evaluate(source)
 
         # —— 步骤 4 & 5：修复 ——
-        fix_result = self._step_fix(source)
+        fix_result = self._step_fix(source, lang_name, lang_id)
 
         # —— 步骤 6 & 7：改进 ——
         code_to_improve = fix_result.get("fixed_code", source) if fix_result else source
-        improve_result = self._step_improve(code_to_improve)
+        improve_result = self._step_improve(code_to_improve, lang_name, lang_id)
 
         # —— 步骤 8：测试用例生成 ——
         final_code = (
@@ -145,7 +148,7 @@ class EvalAgent:
             if improve_result
             else code_to_improve
         )
-        test_result = self._step_validate(final_code)
+        test_result = self._step_validate(final_code, lang_name, lang_id, test_framework)
 
         # —— 步骤 9：经验总结与记忆更新 ——
         experience = self._step_summarize_experience()
@@ -159,6 +162,7 @@ class EvalAgent:
             improve_result=improve_result,
             test_result=test_result,
             experience=experience,
+            lang_id=lang_id,
         )
 
         logger.info("评估完成")
@@ -194,7 +198,7 @@ class EvalAgent:
         n_issues = len(self.working_memory.issues)
         logger.info("评估完成：总分 %s/10，发现 %d 个问题", score, n_issues)
 
-    def _step_fix(self, source: str) -> Optional[dict]:
+    def _step_fix(self, source: str, lang_name: str = "Python", lang_id: str = "python") -> Optional[dict]:
         """步骤 4 & 5：修复"""
         issues = self.working_memory.issues
         # 仅当存在中等及以上严重性的问题时才执行修复
@@ -207,12 +211,13 @@ class EvalAgent:
 
         logger.info("[3/9] 执行代码修复...")
         fix_result = self.fixer.fix(
-            source, issues, self.working_memory.code_graph
+            source, issues, self.working_memory.code_graph,
+            lang_name=lang_name, lang_id=lang_id,
         )
         self.working_memory.fixed_code = fix_result.get("fixed_code", source)
         return fix_result
 
-    def _step_improve(self, source: str) -> Optional[dict]:
+    def _step_improve(self, source: str, lang_name: str = "Python", lang_id: str = "python") -> Optional[dict]:
         """步骤 6 & 7：改进"""
         logger.info("[4/9] 执行代码改进...")
         # 获取相关知识
@@ -224,6 +229,8 @@ class EvalAgent:
             self.working_memory.evaluation,
             self.working_memory.code_graph,
             relevant_knowledge,
+            lang_name=lang_name,
+            lang_id=lang_id,
         )
         self.working_memory.improved_code = improve_result.get("improved_code", source)
         self.working_memory.improvements = [
@@ -232,11 +239,14 @@ class EvalAgent:
         ]
         return improve_result
 
-    def _step_validate(self, source: str) -> Optional[dict]:
+    def _step_validate(self, source: str, lang_name: str = "Python", lang_id: str = "python", test_framework: str = "pytest") -> Optional[dict]:
         """步骤 8：生成测试用例"""
         logger.info("[5/9] 生成测试用例...")
-        analysis = self.analyzer.analyze(source)
-        test_result = self.validator.generate_tests(source, analysis)
+        analysis = self.analyzer.analyze(source, filename=self.working_memory.file_path or "<input>")
+        test_result = self.validator.generate_tests(
+            source, analysis,
+            lang_name=lang_name, lang_id=lang_id, test_framework=test_framework,
+        )
         self.working_memory.test_cases = test_result.get("test_cases", [])
         return test_result
 
@@ -282,14 +292,21 @@ class EvalAgent:
         )
 
     def _extract_keywords(self, source: str) -> list[str]:
-        """从代码中提取关键词用于记忆检索"""
+        """从代码中提取关键词用于记忆检索（多语言支持）"""
         import re
-        # 提取函数名、类名和常见模式
-        names = re.findall(r'\bdef\s+(\w+)', source)
+        names = []
+        # Python / Ruby / Scala
+        names += re.findall(r'\bdef\s+(\w+)', source)
         names += re.findall(r'\bclass\s+(\w+)', source)
-        # 提取导入模块名
+        # C 风格语言 (Java, C#, Go, Rust, etc.)
+        names += re.findall(r'\bfunc\s+(\w+)', source)
+        names += re.findall(r'\bfn\s+(\w+)', source)
+        names += re.findall(r'\bfunction\s+(\w+)', source)
+        # 导入
         names += re.findall(r'\bimport\s+(\w+)', source)
         names += re.findall(r'\bfrom\s+(\w+)', source)
+        names += re.findall(r'\brequire\s*\(?[\'"]([\w./]+)', source)
+        names += re.findall(r'\buse\s+([\w:]+)', source)
         # 去重并过滤太短的名字
         return list(set(n for n in names if len(n) > 2))
 
@@ -313,7 +330,7 @@ class EvalAgent:
 检查项：
 1. 是否遗漏了重要问题？
 2. 修复方案是否可能引入新的 Bug？
-3. 改进建议是否符合 Python 最佳实践？
+3. 改进建议是否符合该语言的最佳实践？
 4. 是否存在更优的解决方案？
 
 如果发现问题，请指出；如果没有，请确认报告质量合格。
@@ -363,7 +380,7 @@ class EvalAgent:
         project = scanner.scan(directory)
 
         if project.total_files == 0:
-            return "未发现 Python 文件。"
+            return "未发现代码文件。"
 
         # 2. LLM 深度解读
         deep_analysis = self._deep_interpret_project(project)

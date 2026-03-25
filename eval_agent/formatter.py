@@ -37,6 +37,7 @@ class OutputFormatter:
         improve_result: Optional[dict],
         test_result: Optional[dict],
         experience: str = "",
+        lang_id: str = "python",
     ) -> str:
         """格式化完整输出"""
         sections = [
@@ -45,9 +46,9 @@ class OutputFormatter:
             self._section_issues(evaluation.get("issues", [])),
             self._section_structure(analysis),
             self._section_fixes(fix_result),
-            self._section_improved_code(improve_result),
+            self._section_improved_code(improve_result, lang_id),
             self._section_improvements(improve_result),
-            self._section_tests(test_result),
+            self._section_tests(test_result, lang_id),
             self._section_experience(experience),
         ]
         return "\n\n".join(s for s in sections if s)
@@ -155,13 +156,13 @@ class OutputFormatter:
         return "\n".join(lines)
 
     # ---- 5. 优化后代码 ----
-    def _section_improved_code(self, improve_result: Optional[dict]) -> str:
+    def _section_improved_code(self, improve_result: Optional[dict], lang_id: str = "python") -> str:
         if not improve_result:
             return ""
         code = improve_result.get("improved_code", "")
         if not code:
             return ""
-        return f"## 5. 优化后代码\n\n```python\n{code}\n```"
+        return f"## 5. 优化后代码\n\n```{lang_id}\n{code}\n```"
 
     # ---- 6. 关键改进说明 ----
     def _section_improvements(self, improve_result: Optional[dict]) -> str:
@@ -193,7 +194,7 @@ class OutputFormatter:
         return "\n".join(lines)
 
     # ---- 7. 测试用例 ----
-    def _section_tests(self, test_result: Optional[dict]) -> str:
+    def _section_tests(self, test_result: Optional[dict], lang_id: str = "python") -> str:
         if not test_result:
             return ""
         lines = ["## 7. 测试用例\n"]
@@ -212,7 +213,7 @@ class OutputFormatter:
 
         code = test_result.get("test_code", "")
         if code:
-            lines.append(f"\n```python\n{code}\n```")
+            lines.append(f"\n```{lang_id}\n{code}\n```")
 
         notes = test_result.get("coverage_notes", "")
         if notes:

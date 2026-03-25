@@ -1,18 +1,21 @@
-"""记忆系统模块 — 三层记忆架构
+"""记忆系统模块 — 四层记忆架构
+
+设计理念源自认知科学的记忆模型，将知识按生命周期和来源分层存储。
 
 层级结构::
 
-    工作记忆 (WorkingMemory)
-      ├─ 生命周期：单轮任务
-      └─ 内容：当前代码、AST、Code Graph、评估上下文
+    工作记忆 (WorkingMemory)        ← 单轮任务上下文（代码、AST、评估结果）
+    长期记忆 (LongTermMemory)       ← 跨任务经验积累（Bug 模式 / 优化策略）
+    持久知识 (PersistentKnowledge)  ← 内置最佳实践（PEP 8 / 安全清单 / 常见陷阱）
+    外部记忆 (external_memory.json)  ← 用户手动添加的笔记与参考上下文
 
-    长期记忆 (LongTermMemory)
-      ├─ 生命周期：跨任务持久化（JSON 文件）
-      └─ 内容：Bug 模式、优化策略、代码结构经验
+记忆流转::
 
-    持久知识 (PersistentKnowledge)
-      ├─ 生命周期：永久
-      └─ 内容：PEP 8 规范、安全清单、常见陷阱等内置知识
+    任务开始 → 初始化工作记忆
+      → 各步骤写入中间结果
+      → 任务结束时提炼经验
+      → 写入长期记忆（JSON 持久化）
+      → 后续任务检索相关经验
 """
 
 from eval_agent.memory.working_memory import WorkingMemory

@@ -1,15 +1,19 @@
 #!/usr/bin/env python3
-"""Eval Agent CLI — 代码评估与进化智能体命令行入口
+"""Eval Agent CLI — 多语言代码评估与进化智能体命令行入口
+
+支持三种输入模式（文件 / 目录 / 代码片段）和 Web 可视化界面。
+评估流程：AST解析 → 7维评估 → Bug修复 → 代码改进 → 测试生成 → 经验总结。
 
 用法示例::
 
-    # 评估单个文件
+    # 评估单个文件（Python / JS / Go / Rust / Java 等 16+ 语言）
     python3 main.py -f my_script.py
+    python3 main.py -f app.js
 
     # 评估整个项目目录
     python3 main.py -d ./my_project
 
-    # 启动 Web 界面
+    # 启动 Web 可视化界面
     python3 main.py --web
     python3 main.py --web --port 9000
 
@@ -103,7 +107,7 @@ def build_config(args) -> AgentConfig:
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Eval Agent — 面向 Python 与通用代码的评估与进化型智能体",
+        description="Eval Agent — 面向多语言代码的评估与进化型智能体",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 使用示例：
@@ -129,8 +133,8 @@ def main():
 
     # ---- 输入选项（三选一） ----
     input_group = parser.add_mutually_exclusive_group()
-    input_group.add_argument("-f", "--file", help="待评估的 Python 文件路径")
-    input_group.add_argument("-d", "--directory", help="待评估的项目目录（递归扫描所有 .py 文件）")
+    input_group.add_argument("-f", "--file", help="待评估的代码文件路径")
+    input_group.add_argument("-d", "--directory", help="待评估的项目目录（递归扫描所有代码文件）")
     input_group.add_argument("-c", "--code", help="待评估的代码片段（直接传入字符串）")
 
     # ---- 输出选项 ----
@@ -154,7 +158,7 @@ def main():
 
     # ---- 通用 ----
     parser.add_argument("-v", "--verbose", action="store_true", help="详细日志输出（DEBUG 级别）")
-    parser.add_argument("--version", action="version", version="Eval Agent v0.1.0")
+    parser.add_argument("--version", action="version", version="Eval Agent v0.2.0")
 
     args = parser.parse_args()
     setup_logging(args.verbose)

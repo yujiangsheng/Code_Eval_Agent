@@ -1,11 +1,15 @@
-"""代码分析器 — 基于 AST 的静态分析与 Code Graph 构建
+"""代码分析器 — 多语言静态分析与 Code Graph 构建
 
-本模块是 Eval Agent 的核心分析引擎，完全基于 Python 标准库 ``ast``
-模块实现，无需任何外部依赖即可完成：
+本模块是 Eval Agent 的核心分析引擎，支持多种编程语言：
 
-  1. **源码解析**：将 Python 源码解析为 AST，提取函数、类、导入、全局变量
-  2. **圈复杂度**：使用 McCabe 方法计算每个函数的圈复杂度
+  - **Python**: 基于 ``ast`` 模块的深度分析（函数、类、导入、圈复杂度）
+  - **其他语言**: 基于正则的通用分析（函数、类、导入提取）
+
+功能：
+  1. **源码解析**：提取函数、类、导入、全局变量
+  2. **圈复杂度**：使用 McCabe 方法（Python）或近似估算（其他语言）
   3. **Code Graph**：以文本形式描述代码的类结构、函数列表、调用关系和复杂度热点
+  4. **语言检测**：根据文件后缀自动识别编程语言
 
 数据结构层次::
 
@@ -22,10 +26,56 @@ from __future__ import annotations
 
 import ast
 import logging
+import os
+import re
 from dataclasses import dataclass, field
 from typing import Optional
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================
+#  语言检测与配置
+# ============================================================
+
+# 文件后缀 -> (语言名, 代码块语言标识, 注释符号, 编码规范, 测试框架)
+LANGUAGE_MAP = {
+    ".py":    ("Python",      "python",     "#",   "PEP 8",        "pytest"),
+    ".js":    ("JavaScript",  "javascript", "//",  "ESLint/Airbnb", "Jest"),
+    ".ts":    ("TypeScript",  "typescript", "//",  "ESLint/TS",    "Jest"),
+    ".jsx":   ("JavaScript (JSX)", "jsx",    "//",  "ESLint/Airbnb", "Jest"),
+    ".tsx":   ("TypeScript (TSX)", "tsx",     "//",  "ESLint/TS",    "Jest"),
+    ".java":  ("Java",        "java",       "//",  "Google Java Style", "JUnit"),
+    ".c":     ("C",           "c",          "//",  "C99/C11 规范",   "Unity/CUnit"),
+    ".cpp":   ("C++",         "cpp",        "//",  "C++ Core Guidelines", "Google Test"),
+    ".h":     ("C/C++ Header","c",          "//",  "C/C++ 规范",     ""),
+    ".hpp":   ("C++ Header",  "cpp",        "//",  "C++ Core Guidelines", ""),
+    ".go":    ("Go",          "go",         "//",  "Effective Go",  "go test"),
+    ".rs":    ("Rust",        "rust",       "//",  "Rust API Guidelines", "cargo test"),
+    ".rb":    ("Ruby",        "ruby",       "#",   "RuboCop",       "RSpec"),
+    ".php":   ("PHP",         "php",        "//",  "PSR-12",        "PHPUnit"),
+    ".cs":    ("C#",          "csharp",     "//",  ".NET 编码规范",  "xUnit/NUnit"),
+    ".swift": ("Swift",       "swift",      "//",  "Swift API Design Guidelines", "XCTest"),
+    ".kt":    ("Kotlin",      "kotlin",     "//",  "Kotlin Coding Conventions", "JUnit/KotlinTest"),
+    ".kts":   ("Kotlin Script","kotlin",    "//",  "Kotlin Coding Conventions", "JUnit/KotlinTest"),
+    ".scala": ("Scala",       "scala",      "//",  "Scala Style Guide", "ScalaTest"),
+    ".lua":   ("Lua",         "lua",        "--",  "Lua Style Guide", "busted"),
+    ".sh":    ("Shell",       "bash",       "#",   "ShellCheck",    "bats"),
+    ".bash":  ("Bash",        "bash",       "#",   "ShellCheck",    "bats"),
+    ".r":     ("R",           "r",          "#",   "tidyverse style guide", "testthat"),
+    ".R":     ("R",           "r",          "#",   "tidyverse style guide", "testthat"),
+    ".m":     ("Objective-C", "objectivec", "//",  "Apple Coding Guidelines", "XCTest"),
+}
+
+
+def detect_language(filename: str) -> tuple[str, str, str, str, str]:
+    """根据文件名检测编程语言
+
+    Returns:
+        (语言名, 代码块标识, 注释符号, 编码规范, 测试框架)
+    """
+    ext = os.path.splitext(filename)[1].lower() if filename else ""
+    return LANGUAGE_MAP.get(ext, ("未知", "", "//", "通用编码规范", ""))
 
 
 # ============================================================
@@ -96,6 +146,8 @@ class AnalysisResult:
     comment_lines: int = 0
     syntax_errors: list[str] = field(default_factory=list)
     code_graph: str = ""
+    language: str = "Python"
+    lang_id: str = "python"
 
     def to_dict(self) -> dict:
         """将分析结果序列化为可 JSON 化的字典"""
@@ -133,6 +185,8 @@ class AnalysisResult:
                 "comment_lines": self.comment_lines,
             },
             "syntax_errors": self.syntax_errors,
+            "language": self.language,
+            "lang_id": self.lang_id,
         }
 
 
@@ -141,32 +195,46 @@ class AnalysisResult:
 # ============================================================
 
 class CodeAnalyzer:
-    """基于 AST 的 Python 代码静态分析器
+    """多语言代码静态分析器
 
     分析流程::
 
-        source → 行数统计 → AST 解析 → 提取(导入/类/函数/全局变量)
-                                      → 计算圈复杂度
-                                      → 构建 Code Graph
+        source → 语言检测 → 行数统计 → 结构提取 → 构建 Code Graph
 
-    所有分析均为纯本地计算，不依赖 LLM。
+    - Python: 使用 ast 模块进行深度 AST 分析
+    - 其他语言: 使用正则表达式进行通用结构提取
     """
 
     def analyze(self, source: str, filename: str = "<input>") -> AnalysisResult:
-        """分析一段 Python 源代码
+        """分析一段源代码
 
         Args:
-            source:   完整的 Python 源码字符串
-            filename: 文件名（仅用于错误提示）
+            source:   完整的源码字符串
+            filename: 文件名（用于语言检测和错误提示）
 
         Returns:
             AnalysisResult 包含函数、类、导入等全部静态信息
         """
+        lang_name, lang_id, comment_char, _, _ = detect_language(filename)
         result = AnalysisResult()
+        result.language = lang_name
+        result.lang_id = lang_id
         result.total_lines = len(source.splitlines())
 
+        if lang_name == "Python":
+            return self._analyze_python(source, filename, result)
+        else:
+            return self._analyze_generic(source, filename, result, comment_char)
+
+    # ============================================================
+    #  Python 专用分析（基于 AST）
+    # ============================================================
+
+    def _analyze_python(self, source: str, filename: str, result: AnalysisResult) -> AnalysisResult:
+        """使用 ast 模块对 Python 源码进行深度分析"""
+
         # 统计行类型
-        self._count_lines(source, result)
+        self._count_lines(source, result, "#")
 
         # 尝试 AST 解析
         try:
@@ -186,13 +254,142 @@ class CodeAnalyzer:
 
         return result
 
-    def _count_lines(self, source: str, result: AnalysisResult):
+    # ============================================================
+    #  通用语言分析（基于正则）
+    # ============================================================
+
+    # 各语言的函数/类/导入正则模式
+    _GENERIC_PATTERNS = {
+        "function": {
+            "JavaScript":  r'(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^=])\s*=>)',
+            "TypeScript":  r'(?:function\s+(\w+)|(?:const|let|var)\s+(\w+)\s*(?::[^=]*)?\s*=\s*(?:async\s*)?(?:\([^)]*\)|[^=])\s*=>)',
+            "Java":        r'(?:public|private|protected|static|\s)+[\w<>\[\]]+\s+(\w+)\s*\([^)]*\)\s*(?:throws\s+[\w,\s]+)?\s*\{',
+            "C":           r'(?:static\s+|extern\s+|inline\s+)*\w[\w\s*]+\s+(\w+)\s*\([^)]*\)\s*\{',
+            "C++":         r'(?:static\s+|virtual\s+|inline\s+|explicit\s+)*[\w:<>\s*&]+\s+(\w+)\s*\([^)]*\)\s*(?:const\s*)?\s*(?:override\s*)?\{',
+            "Go":          r'func\s+(?:\([^)]*\)\s+)?(\w+)\s*\(',
+            "Rust":        r'(?:pub\s+)?(?:async\s+)?fn\s+(\w+)',
+            "Ruby":        r'def\s+(\w+[?!]?)',
+            "PHP":         r'(?:public|private|protected|static|\s)*function\s+(\w+)',
+            "C#":          r'(?:public|private|protected|internal|static|virtual|override|async|\s)+[\w<>\[\]]+\s+(\w+)\s*\([^)]*\)',
+            "Swift":       r'(?:public\s+|private\s+|internal\s+|open\s+)?func\s+(\w+)',
+            "Kotlin":      r'(?:public\s+|private\s+|internal\s+|protected\s+)?fun\s+(?:<[^>]+>\s+)?(\w+)',
+            "Scala":       r'def\s+(\w+)',
+            "Lua":         r'(?:local\s+)?function\s+(\w+(?:\.\w+)*)',
+            "Shell":       r'(?:function\s+(\w+)|(\w+)\s*\(\s*\))',
+            "Bash":        r'(?:function\s+(\w+)|(\w+)\s*\(\s*\))',
+            "R":           r'(\w+)\s*<-\s*function',
+            "Objective-C": r'[-+]\s*\([^)]*\)\s*(\w+)',
+        },
+        "class": {
+            "JavaScript":  r'class\s+(\w+)',
+            "TypeScript":  r'(?:export\s+)?(?:abstract\s+)?class\s+(\w+)',
+            "Java":        r'(?:public|private|protected|abstract|\s)*class\s+(\w+)',
+            "C++":         r'(?:class|struct)\s+(\w+)',
+            "Go":          r'type\s+(\w+)\s+struct',
+            "Rust":        r'(?:pub\s+)?(?:struct|enum|trait)\s+(\w+)',
+            "Ruby":        r'class\s+(\w+)',
+            "PHP":         r'class\s+(\w+)',
+            "C#":          r'(?:public|private|internal|abstract|sealed|\s)*class\s+(\w+)',
+            "Swift":       r'(?:public\s+|private\s+|internal\s+|open\s+)?class\s+(\w+)',
+            "Kotlin":      r'(?:data\s+|sealed\s+|abstract\s+|open\s+)?class\s+(\w+)',
+            "Scala":       r'(?:case\s+)?class\s+(\w+)',
+            "Objective-C": r'@interface\s+(\w+)',
+        },
+        "import": {
+            "JavaScript":  r'(?:import\s+.+from\s+[\'"]([^\'"]+)[\'"]|require\s*\([\'"]([^\'"]+)[\'"]\))',
+            "TypeScript":  r'import\s+.+from\s+[\'"]([^\'"]+)[\'"]',
+            "Java":        r'import\s+([\w.]+)',
+            "C":           r'#include\s*[<"]([^>"]+)[>"]',
+            "C++":         r'#include\s*[<"]([^>"]+)[>"]',
+            "C/C++ Header":r'#include\s*[<"]([^>"]+)[>"]',
+            "C++ Header":  r'#include\s*[<"]([^>"]+)[>"]',
+            "Go":          r'"([^"]+)"',
+            "Rust":        r'(?:use\s+([\w:]+)|extern\s+crate\s+(\w+))',
+            "Ruby":        r'require\s+[\'"]([^\'"]+)[\'"]',
+            "PHP":         r'(?:use\s+([\w\\\\]+)|require(?:_once)?\s+[\'"]([^\'"]+)[\'"])',
+            "C#":          r'using\s+([\w.]+)',
+            "Swift":       r'import\s+(\w+)',
+            "Kotlin":      r'import\s+([\w.]+)',
+            "Kotlin Script":r'import\s+([\w.]+)',
+            "Scala":       r'import\s+([\w.{},\s]+)',
+            "Lua":         r'require\s*[(\'"]+([^\'")\s]+)',
+            "Shell":       r'(?:source|\.)\s+([^\s;]+)',
+            "Bash":        r'(?:source|\.)\s+([^\s;]+)',
+            "R":           r'(?:library|require)\s*\(\s*[\'"]?(\w+)',
+            "Objective-C": r'#import\s*[<"]([^>"]+)[>"]',
+        },
+    }
+
+    def _analyze_generic(self, source: str, filename: str, result: AnalysisResult, comment_char: str) -> AnalysisResult:
+        """对非 Python 语言进行基于正则的通用分析"""
+        lang = result.language
+
+        self._count_lines(source, result, comment_char)
+
+        # 提取函数
+        func_pattern = self._GENERIC_PATTERNS["function"].get(lang)
+        if func_pattern:
+            for match in re.finditer(func_pattern, source):
+                name = next((g for g in match.groups() if g), None)
+                if name:
+                    lineno = source[:match.start()].count('\n') + 1
+                    result.functions.append(FunctionInfo(
+                        name=name, lineno=lineno, end_lineno=None,
+                        args=[], decorators=[], calls=[],
+                        complexity=1, docstring=None,
+                    ))
+
+        # 提取类
+        cls_pattern = self._GENERIC_PATTERNS["class"].get(lang)
+        if cls_pattern:
+            for match in re.finditer(cls_pattern, source):
+                name = next((g for g in match.groups() if g), None)
+                if name:
+                    lineno = source[:match.start()].count('\n') + 1
+                    result.classes.append(ClassInfo(
+                        name=name, lineno=lineno, end_lineno=None,
+                        bases=[], methods=[], decorators=[],
+                    ))
+
+        # 提取导入
+        imp_pattern = self._GENERIC_PATTERNS["import"].get(lang)
+        if imp_pattern:
+            for match in re.finditer(imp_pattern, source):
+                module = next((g for g in match.groups() if g), None)
+                if module:
+                    lineno = source[:match.start()].count('\n') + 1
+                    result.imports.append(ImportInfo(
+                        module=module, names=[module.split(".")[-1]],
+                        lineno=lineno, is_from=False,
+                    ))
+
+        # 近似圈复杂度估算
+        branch_keywords = r'\b(if|else\s+if|elif|while|for|catch|except|case|switch)\b'
+        logic_ops = r'(&&|\|\|)'
+        for func in result.functions:
+            func_start = func.lineno - 1
+            lines = source.splitlines()
+            func_end = len(lines)
+            for other in result.functions:
+                if other.lineno > func.lineno:
+                    func_end = min(func_end, other.lineno - 1)
+                    break
+            func_text = "\n".join(lines[func_start:func_end])
+            func.complexity = 1 + len(re.findall(branch_keywords, func_text)) + len(re.findall(logic_ops, func_text))
+
+        # 构建 Code Graph
+        result.code_graph = self._build_code_graph(result)
+        return result
+
+    def _count_lines(self, source: str, result: AnalysisResult, comment_char: str = "#"):
         """统计有效代码行与注释行（空行不计入任何类别）"""
         for line in source.splitlines():
             stripped = line.strip()
             if not stripped:
                 continue
-            elif stripped.startswith("#"):
+            elif stripped.startswith(comment_char):
+                result.comment_lines += 1
+            elif comment_char == "//" and stripped.startswith("/*"):
                 result.comment_lines += 1
             else:
                 result.code_lines += 1

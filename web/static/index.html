@@ -40,7 +40,10 @@
       </li>
     </ul>
     <div class="sidebar-footer">
-      <span class="version">v0.1.0</span>
+      <button class="btn-quit" onclick="App.shutdown()" title="关闭服务器并退出">
+        <span>⏻</span> 退出服务
+      </button>
+      <span class="version">v0.2.0</span>
     </div>
   </nav>
 
@@ -243,9 +246,44 @@
 
     <!-- ═══ Tab: 记忆库 ═══ -->
     <section id="tab-memory" class="tab-panel">
-      <h1>长期记忆库</h1>
-      <div id="memory-stats" class="status-bar"></div>
-      <div id="memory-entries" class="section-card"></div>
+      <h1>记忆库</h1>
+      <div class="memory-tabs">
+        <button class="mem-tab active" data-mem="working" onclick="App.switchMemoryTab('working')">🧠 工作记忆</button>
+        <button class="mem-tab" data-mem="longterm" onclick="App.switchMemoryTab('longterm')">📝 长期记忆</button>
+        <button class="mem-tab" data-mem="persistent" onclick="App.switchMemoryTab('persistent')">💾 持久记忆</button>
+        <button class="mem-tab" data-mem="external" onclick="App.switchMemoryTab('external')">🌐 外部记忆</button>
+      </div>
+
+      <!-- 工作记忆 -->
+      <div id="mem-working" class="mem-panel active">
+        <p class="mem-panel-desc">单轮任务生命周期内的上下文，包含当前代码、AST、评估结果等。</p>
+        <div id="working-memory-content" class="section-card">
+          <div class="placeholder-msg">当前无活跃任务</div>
+        </div>
+      </div>
+
+      <!-- 长期记忆 -->
+      <div id="mem-longterm" class="mem-panel">
+        <p class="mem-panel-desc">跨任务的经验积累，包含 Bug 模式、优化策略、代码结构经验。</p>
+        <div id="longterm-stats" class="status-bar"></div>
+        <div id="longterm-entries" class="section-card"></div>
+      </div>
+
+      <!-- 持久记忆 -->
+      <div id="mem-persistent" class="mem-panel">
+        <p class="mem-panel-desc">固化的编程最佳实践、安全清单、常见陷阱等内置知识。</p>
+        <div id="persistent-content" class="section-card"></div>
+      </div>
+
+      <!-- 外部记忆 -->
+      <div id="mem-external" class="mem-panel">
+        <p class="mem-panel-desc">用户手动添加的笔记与外部知识，作为评估参考上下文。</p>
+        <div class="external-input-row">
+          <input id="external-note-input" type="text" placeholder="输入外部记忆笔记 …" />
+          <button class="btn btn-primary btn-sm" onclick="App.addExternalMemory()">添加</button>
+        </div>
+        <div id="external-entries" class="section-card"></div>
+      </div>
     </section>
 
   </main>

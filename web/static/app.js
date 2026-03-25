@@ -445,30 +445,120 @@ const App = (() => {
       .join('');
   }
 
-  /* ══════════════ 记忆库 ══════════════ */
+  /* ══════════════ 记忆库（四类） ══════════════ */
+  let currentMemTab = 'working';
+
+  function switchMemoryTab(tab) {
+    currentMemTab = tab;
+    document.querySelectorAll('.mem-tab').forEach(el => {
+      el.classList.toggle('active', el.dataset.mem === tab);
+    });
+    document.querySelectorAll('.mem-panel').forEach(el => {
+      el.classList.toggle('active', el.id === `mem-${tab}`);
+    });
+  }
+
   async function loadMemory() {
     try {
       const res = await fetch('/api/memory');
       const data = await res.json();
-      const statsEl = document.getElementById('memory-stats');
-      statsEl.textContent = `共 ${data.entries.length} 条长期记忆`;
-      statsEl.className = 'status-bar';
-
-      const el = document.getElementById('memory-entries');
-      if (!data.entries.length) {
-        el.innerHTML = '<div class="placeholder-msg">暂无长期记忆</div>';
-        return;
-      }
-      el.innerHTML = data.entries.map(e => `
-        <div class="mem-entry">
-          <div class="mem-file">${escapeHtml(e.file || '—')}<span class="mem-score">评分: ${e.score ?? '-'}</span></div>
-          <div class="mem-content">${escapeHtml(truncate(e.evaluation || e.content || '', 400))}</div>
-          <div class="mem-meta">${e.timestamp || ''}</div>
-        </div>`).join('');
+      if (!data.success) throw new Error(data.error || '加载失败');
+      renderWorkingMemory(data.working);
+      renderLongTermMemory(data.long_term);
+      renderPersistentMemory(data.persistent);
+      renderExternalMemory(data.external);
     } catch (err) {
-      document.getElementById('memory-entries').innerHTML =
+      document.getElementById('working-memory-content').innerHTML =
         `<div class="status-bar error">加载记忆库失败: ${escapeHtml(err.message)}</div>`;
     }
+  }
+
+  function renderWorkingMemory(wm) {
+    const el = document.getElementById('working-memory-content');
+    if (!wm || !wm.file_path) {
+      el.innerHTML = '<div class="placeholder-msg">当前无活跃任务</div>';
+      return;
+    }
+    el.innerHTML = [
+      ['文件', wm.file_path || '—'],
+      ['语言', wm.language || '—'],
+      ['代码长度', `${wm.code_length ?? 0} 字符`],
+      ['问题数', wm.issues_count ?? 0],
+      ['时间', wm.timestamp || '—'],
+    ].map(([k, v]) => `<div class="wm-item"><span class="wm-label">${k}</span><span class="wm-value">${escapeHtml(String(v))}</span></div>`).join('')
+    + (wm.summary ? `<div style="padding:10px 12px;font-size:12px;color:var(--text-secondary);white-space:pre-wrap">${escapeHtml(wm.summary)}</div>` : '');
+  }
+
+  function renderLongTermMemory(lt) {
+    const statsEl = document.getElementById('longterm-stats');
+    const el = document.getElementById('longterm-entries');
+    const entries = lt?.entries || [];
+    statsEl.textContent = `共 ${entries.length} 条长期记忆`;
+    statsEl.className = 'status-bar';
+    if (!entries.length) {
+      el.innerHTML = '<div class="placeholder-msg">暂无长期记忆</div>';
+      return;
+    }
+    el.innerHTML = entries.map(e => `
+      <div class="mem-entry">
+        <div class="mem-file">${escapeHtml(e.source_file || e.file || '—')}<span class="mem-score">${e.category || ''}</span></div>
+        <div class="mem-content">${escapeHtml(truncate(e.content || e.evaluation || '', 400))}</div>
+        <div class="mem-meta">${e.timestamp || ''}</div>
+      </div>`).join('');
+  }
+
+  function renderPersistentMemory(pk) {
+    const el = document.getElementById('persistent-content');
+    if (!pk || !Object.keys(pk).length) {
+      el.innerHTML = '<div class="placeholder-msg">知识库暂无内容</div>';
+      return;
+    }
+    el.innerHTML = Object.entries(pk).map(([cat, items]) => `
+      <div class="pk-category">
+        <div class="pk-category-title">${escapeHtml(cat)} (${items.length})</div>
+        ${items.map(it => `<div class="pk-item">${escapeHtml(it)}</div>`).join('')}
+      </div>`).join('');
+  }
+
+  function renderExternalMemory(ext) {
+    const el = document.getElementById('external-entries');
+    const entries = ext?.entries || [];
+    if (!entries.length) {
+      el.innerHTML = '<div class="placeholder-msg">暂无外部记忆</div>';
+      return;
+    }
+    el.innerHTML = entries.map((e, i) => `
+      <div class="ext-entry">
+        <span class="ext-entry-content">${escapeHtml(e.content)}</span>
+        <span class="ext-entry-time">${e.timestamp || ''}</span>
+        <button class="ext-entry-del" onclick="App.deleteExternalMemory(${i})" title="删除">✕</button>
+      </div>`).join('');
+  }
+
+  async function addExternalMemory() {
+    const input = document.getElementById('external-note-input');
+    const content = input.value.trim();
+    if (!content) return;
+    try {
+      await fetch('/api/memory/external', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      });
+      input.value = '';
+      loadMemory();
+    } catch (err) { alert('添加失败: ' + err.message); }
+  }
+
+  async function deleteExternalMemory(index) {
+    try {
+      await fetch('/api/memory/external', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ index }),
+      });
+      loadMemory();
+    } catch (err) { alert('删除失败: ' + err.message); }
   }
 
   /* ══════════════ 目录浏览器 ══════════════ */
@@ -570,9 +660,30 @@ const App = (() => {
     });
   });
 
+  /* ── 关闭服务器并关闭页面 ── */
+  async function shutdown() {
+    if (!confirm('确定要关闭 Eval Agent 服务吗？')) return;
+    try {
+      await fetch('/api/shutdown', { method: 'POST' });
+    } catch (e) {
+      // 连接断开说明服务器已停止
+    }
+    // 尝试关闭页面；若浏览器阻止则显示提示
+    window.close();
+    // window.close() 仅对脚本打开的窗口生效，兜底显示已停止提示
+    document.body.innerHTML = `
+      <div style="display:flex;align-items:center;justify-content:center;height:100vh;
+                  background:#0f172a;color:#e2e8f0;font-family:system-ui;flex-direction:column;gap:16px">
+        <div style="font-size:48px">⚡</div>
+        <h2>Eval Agent 已停止</h2>
+        <p style="color:#94a3b8">服务器已关闭，请手动关闭此页面。</p>
+      </div>`;
+  }
+
   /* ── 暴露公共 API ── */
   return {
     scan, evaluate, switchTab, fitCodeGraph, copyReport, downloadReport,
-    openBrowser, closeBrowser, browseTo, previewDir, selectDir,
+    openBrowser, closeBrowser, browseTo, previewDir, selectDir, shutdown,
+    switchMemoryTab, addExternalMemory, deleteExternalMemory,
   };
 })();
